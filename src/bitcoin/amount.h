@@ -4,8 +4,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_AMOUNT_H
-#define BITCOIN_AMOUNT_H
+#pragma once
 
 #include "serialize.h"
 
@@ -20,28 +19,28 @@ struct Amount {
 private:
     int64_t amount;
 
-    explicit constexpr Amount(int64_t _amount) : amount(_amount) {}
+    explicit constexpr Amount(int64_t _amount) noexcept : amount(_amount) {}
 
 public:
     constexpr Amount() noexcept : amount(0) {}
     constexpr Amount(const Amount &_camount) noexcept : amount(_camount.amount) {}
 
-    static constexpr Amount zero() { return Amount(0); }
-    static constexpr Amount satoshi() { return Amount(1); }
+    static constexpr Amount zero() noexcept { return Amount(0); }
+    static constexpr Amount satoshi() noexcept { return Amount(1); }
 
     /**
      * Implement standard operators
      */
-    Amount &operator=(const Amount &a) {
+    Amount &operator=(const Amount &a) noexcept {
         amount = a.amount;
         return *this;
     }
 
-    Amount &operator+=(const Amount a) {
+    Amount &operator+=(const Amount a) noexcept {
         amount += a.amount;
         return *this;
     }
-    Amount &operator-=(const Amount a) {
+    Amount &operator-=(const Amount a) noexcept {
         amount -= a.amount;
         return *this;
     }
@@ -139,12 +138,7 @@ public:
     std::string ToString() const;
 
     // serialization support
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream &s, Operation ser_action) {
-        READWRITE(amount);
-    }
+    SERIALIZE_METHODS(Amount, obj) { READWRITE(obj.amount); }
 };
 
 inline constexpr Amount SATOSHI = Amount::satoshi();
@@ -171,5 +165,3 @@ inline bool MoneyRange(const Amount nValue) {
 }
 
 } // end namespace bitcoin
-
-#endif //  BITCOIN_AMOUNT_H

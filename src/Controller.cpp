@@ -212,7 +212,7 @@ void Controller::startup()
             bitcoin::CMutableTransaction tx;
             constexpr auto kErrLine2 = "Something is wrong with either BitcoinD or our ability to understand its RPC responses.";
             try {
-                BTC::Deserialize(tx, Util::ParseHexFast(resp.result().toByteArray()), 0, isSegWitCoin(), isMimbleWimbleCoin());
+                BTC::Deserialize(tx, Util::ParseHexFast(resp.result().toByteArray()), 0, isSegWitCoin(), isMimbleWimbleCoin(), isBCHCoin());
             } catch (const std::exception &e) {
                 Error() << "Failed to deserialize tx #1 with txid " << hash.toHex() << ": " << e.what();
                 Error() << kErrLine2;
@@ -474,6 +474,7 @@ struct DownloadBlocksTask : public CtlTask
 
     const bool allowSegWit; ///< initted in c'tor. If true, deserialize blocks using the optional segwit extensons to the tx format.
     const bool allowMimble; ///< like above, but if true we allow mimblewimble (litecoin)
+    const bool allowCashTokens; ///< allow special cashtoken deserialization rules (BCH only)
 
     void do_get(unsigned height);
 
@@ -490,7 +491,7 @@ struct DownloadBlocksTask : public CtlTask
 DownloadBlocksTask::DownloadBlocksTask(unsigned from, unsigned to, unsigned stride, unsigned nClients, Controller *ctl_)
     : CtlTask(ctl_, QStringLiteral("Task.DL %1 -> %2").arg(from).arg(to)), from(from), to(to), stride(stride),
       expectedCt(unsigned(nToDL(from, to, stride))), max_q(int(nClients)+1),
-      allowSegWit(ctl_->isSegWitCoin()), allowMimble(ctl_->isMimbleWimbleCoin())
+      allowSegWit(ctl_->isSegWitCoin()), allowMimble(ctl_->isMimbleWimbleCoin()), allowCashTokens(ctl_->isBCHCoin())
 {
     FatalAssert( (to >= from) && (ctl_) && (stride > 0), "Invalid params to DonloadBlocksTask c'tor, FIXME!");
     if (stride > 1 || expectedCt > 1) {
@@ -545,7 +546,7 @@ void DownloadBlocksTask::do_get(unsigned int bnum)
                     if (bool sizeOk = header.length() == HEADER_SIZE; sizeOk && (chkHash = BTC::HashRev(header)) == hash) {
                         PreProcessedBlockPtr ppb;
                         try {
-                            const auto cblock = BTC::Deserialize<bitcoin::CBlock>(rawblock, 0, allowSegWit, allowMimble, allowMimble /* thorw if junk at end if Litecoin (catch deser. bugs) */);
+                            const auto cblock = BTC::Deserialize<bitcoin::CBlock>(rawblock, 0, allowSegWit, allowMimble, allowCashTokens, allowMimble /* throw if junk at end if Litecoin (catch deser. bugs) */);
                             ppb = PreProcessedBlock::makeShared(bnum, size_t(rawblock.size()), cblock);
                             if (allowMimble && Debug::isEnabled()) {
                                 // Litecoin only
@@ -661,7 +662,8 @@ struct SynchMempoolTask : public CtlTask
     SynchMempoolTask(Controller *ctl_, std::shared_ptr<Storage> storage, const std::atomic_bool & notifyFlag,
                      const std::unordered_set<TxHash, HashHasher> & ignoreTxns)
         : CtlTask(ctl_, "SynchMempool"), storage(storage), notifyFlag(notifyFlag),
-          txnIgnoreSet(ignoreTxns), isSegWit(ctl_->isSegWitCoin()), isMimble(ctl_->isMimbleWimbleCoin())
+          txnIgnoreSet(ignoreTxns), isSegWit(ctl_->isSegWitCoin()), isMimble(ctl_->isMimbleWimbleCoin()),
+          isCashTokens(ctl_->isBCHCoin())
     {
         scriptHashesAffected.reserve(SubsMgr::kRecommendedPendingNotificationsReserveSize);
         txidsAffected.reserve(SubsMgr::kRecommendedPendingNotificationsReserveSize);
@@ -684,6 +686,7 @@ struct SynchMempoolTask : public CtlTask
     const bool TRACE = Trace::isEnabled(); // set this to true to print more debug
     const bool isSegWit; ///< initted in c'tor. If true, deserialize tx's using the optional segwit extensons to the tx format.
     const bool isMimble; ///< initted in c'tor. If true, deserialize tx's using the optional mimble-wimble extensons to the tx format.
+    const bool isCashTokens; ///< initted in c'tor. True for BCH, false otherwise. Controls Deserialize rules for txns and blocks.
 
     /// The scriptHashes that were affected by this refresh/synch cycle. Used for notifications.
     std::unordered_set<HashX, HashHasher> scriptHashesAffected;
@@ -934,7 +937,7 @@ void SynchMempoolTask::doDLNextTx()
         // deserialize tx, catching any deser errors
         bitcoin::CMutableTransaction ctx;
         try {
-            ctx = BTC::Deserialize<bitcoin::CMutableTransaction>(txdata, 0, isSegWit, isMimble, true /* nojunk */);
+            ctx = BTC::Deserialize<bitcoin::CMutableTransaction>(txdata, 0, isSegWit, isMimble, isCashTokens, true /* nojunk */);
             // Below branch is taken only for Litecoin
             if (isMimble) {
                 if (ctx.mw_blob && ctx.mw_blob->size() > 1) {
@@ -1313,17 +1316,8 @@ void Controller::process(bool beSilentIfUpToDate)
                 AGAIN();
                 return;
             }
-            const auto & chain = task->info.chain;
-            const auto normalizedChain = BTC::NetNameNormalize(chain);
-            const auto net = BTC::NetFromName(chain);
-            if (const auto dbchain = storage->getChain();
-                    dbchain.isEmpty() && !chain.isEmpty() && !normalizedChain.isEmpty() && net != BTC::Net::Invalid) {
-                // save the normalized chain to the db, if we were able to grok it. Older versions of Fulcrum
-                // will expect to see it in the DB since they use it to check sanity.  Newer versions >= 1.2.7
-                // instead query bitcoind for its genesish hash and compare it to db.
-                storage->setChain(normalizedChain);
-            }
 
+            // Ensure genesis hash matches what we have in DB (post-initial sync only)
             if (const auto hashDaemon = bitcoindmgr->getBitcoinDGenesisHash(), hashDb = storage->genesisHash();
                     !hashDb.isEmpty() && !hashDaemon.isEmpty() && hashDb != hashDaemon) {
                 Fatal() << "Bitcoind reports genesis hash: \"" << hashDaemon.toHex() << "\", which differs from our "
@@ -1332,6 +1326,25 @@ void Controller::process(bool beSilentIfUpToDate)
                         << "to resynch.";
                 return;
             }
+
+            // Check that "chain" didn't change, and if it did, warn and save new chain to db if it's one we
+            // understand.
+            const auto & chain = task->info.chain;
+            const auto normalizedChain = BTC::NetNameNormalize(chain);
+            const auto net = BTC::NetFromName(chain);
+            if (const auto dbchain = storage->getChain();
+                    dbchain != normalizedChain && !normalizedChain.isEmpty() && net != BTC::Net::Invalid) {
+                if (!dbchain.isEmpty()) {
+                    Warning() << "Database had chain \"" << dbchain << "\", but bitcoind reports chain \"" << normalizedChain
+                              << "\".  Persisting \"" << normalizedChain << "\" to database.  Please ensure that you"
+                              << " are connected to the correct bitcoind instance!";
+                }
+                // save the normalized chain to the db, if we were able to grok it. Older versions of Fulcrum
+                // will expect to see it in the DB since they use it to check sanity.  Newer versions >= 1.2.7
+                // instead query bitcoind for its genesish hash and compare it to db.
+                storage->setChain(normalizedChain);
+            }
+
             sm->net = net;
             if (UNLIKELY(sm->net == BTC::Net::Invalid)) {
                 // Unknown chain name. This shouldn't happen but it if does, warn the user since it will make all of
@@ -1614,7 +1627,7 @@ void Controller::process_PrintProgress(unsigned height, size_t nTx, size_t nIns,
 
 void Controller::process_DownloadingBlocks()
 {
-    unsigned ct = 0;
+    unsigned ct [[maybe_unused]] = 0;
 
     for (auto it = sm->ppBlocks.find(sm->ppBlkHtNext); it != sm->ppBlocks.end() && !stopFlag; it = sm->ppBlocks.find(sm->ppBlkHtNext)) {
         auto ppb = it->second;
@@ -1894,16 +1907,24 @@ auto Controller::debug(const StatsParams &p) const -> Stats // from StatsMixin
     if (const auto hashx = QByteArray::fromHex(p.value("unspent").toLatin1()); hashx.length() == HashLen) {
         QVariantList l;
 
-        auto items = storage->listUnspent(hashx);
-        for (const auto & item : items) {
-            QVariantMap m;
-            m["tx_hash"] = Util::ToHexFast(item.hash);
-            m["height"] = item.height;
-            m["tx_pos"] = item.tx_pos;
-            m["value"] = qlonglong(item.value / item.value.satoshi());
-            l.push_back(m);
-        }
+        const auto items = storage->listUnspent(hashx, Storage::TokenFilterOption::IncludeTokens);
+        for (const auto & item : items)
+            l.push_back(Server::unspentItemToVariantMap(item));
         ret["unspent_debug"] = l;
+    }
+    if (p.contains("utxo_stats")) {
+        // Note: This is slow and times-out on mainnet or even testnet3. Was mainly used for testing on chipnet.
+        const auto stats = storage->calcUTXOSetStats([](size_t ctr){ DebugM("utxo_stats: progress counter = ", ctr); });
+        QVariantMap m;
+        m["block_height"] = qlonglong(stats.block_height);
+        m["block_hash"] = QString::fromLatin1(stats.block_hash.toHex());
+        m["utxo_db_ct"] = qlonglong(stats.utxo_db_ct);
+        m["utxo_db_size_bytes"] = qlonglong(stats.utxo_db_size_bytes);
+        m["utxo_db_shasum"] = QString::fromLatin1(stats.utxo_db_shasum.toHex());
+        m["shunspent_db_ct"] = qlonglong(stats.shunspent_db_ct);
+        m["shunspent_db_size_bytes"] = qlonglong(stats.shunspent_db_size_bytes);
+        m["shunspent_db_shasum"] = QString::fromLatin1(stats.shunspent_db_shasum.toHex());
+        ret["utxo_stats"] = m;
     }
     if (p.contains("mempool")) {
         auto [mempool, lock] = storage->mempool();

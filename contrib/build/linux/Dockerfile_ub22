@@ -2,7 +2,7 @@
 # Example usage:
 #   $ docker build --force-rm -t fulcrum-builder/qt:linux .
 #   $ docker run --rm -it -v $(pwd):/work fulcrum-builder/qt:linux
-FROM ubuntu:bionic
+FROM ubuntu:jammy
 LABEL maintainer="Calin Culianu <calin.culianu@gmail.com>"
 ENTRYPOINT ["/bin/bash"]
 
@@ -11,11 +11,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN \
     apt -qy update && \
     apt -qy upgrade && \
-    apt -qy install build-essential cmake gdb git iputils-ping nano perl python valgrind wget autoconf && \
-    apt -qy install libbz2-dev zlib1g-dev libssl-dev libnss3-dev libxslt-dev libxml2-dev  && \
-    apt -qy install gcc-8 g++-8 && \
-    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 60 \
-                        --slave /usr/bin/g++ g++ /usr/bin/g++-8 && \
+    apt -qy install build-essential pkg-config cmake gdb git iputils-ping nano perl python3 valgrind wget autoconf && \
+    apt -qy install libbz2-dev zlib1g-dev libssl-dev libgnutls30 libnss3-dev libxslt-dev libxml2-dev  && \
     apt -qy autoremove && \
     apt -qy autoclean
 

@@ -8,7 +8,7 @@ test -n "$here" -a -d "$here" || (echo "Cannot determine build dir. FIXME!" && e
 . "$here"/common/common.sh # functions we use below (fail, et al)
 
 if [ -z "$1" ]; then
-    info "Please specify a build platform as the first argument, one of: windows linux linux_ub16 (or short versions: win lin oldlin)"
+    info "Please specify a build platform as the first argument, one of: windows linux linux_ub22 linux_ub16 (or short versions: win lin newlin oldlin)"
     exit 1
 fi
 plat="$1"
@@ -29,13 +29,19 @@ case "$plat" in
         ;;
     "windows"|"win")
         plat=win  # normalize to 'win'
-        docker_img_name="fulcrum-builder/qt5152:windows"
-        docker_cont_name="fulcrum_cont_qt_5_15_2_windows_$$"
+        docker_img_name="fulcrum-builder/qt:windows"
+        docker_cont_name="fulcrum_cont_qt_windows_$$"
         ;;
     "linux"|"lin")
         plat=linux
-        docker_img_name="fulcrum-builder/qt5152:linux"
-        docker_cont_name="fulcrum_cont_qt_5_15_2_linux_$$"
+        docker_img_name="fulcrum-builder/qt:linux"
+        docker_cont_name="fulcrum_cont_qt_linux_$$"
+        ;;
+    "linux_ub22"|"newlinux"|"newlin"|"lin_ub22")
+        plat=linux
+        docker_img_name="fulcrum-builder/qt:linux_ub22"
+        docker_cont_name="fulcrum_cont_qt_linux_ub22_$$"
+        suffix="_ub22"
         ;;
     "linux_ub16"|"oldlinux"|"oldlin"|"lin_ub16")
         plat=linux
@@ -44,7 +50,7 @@ case "$plat" in
         suffix="_ub16"
         ;;
     *)
-        fail "Unknown platform \"$plat\". Please specify one of: windows linux linux_ub16"
+        fail "Unknown platform \"$plat\". Please specify one of: windows linux linux_ub22 linux_ub16"
         ;;
 esac
 

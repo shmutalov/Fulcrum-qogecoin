@@ -71,25 +71,11 @@ namespace BTC
     }
 
 
-    /// specialization for CTransaction which works differently
-    template <> bitcoin::CTransaction Deserialize(const QByteArray &bytes, int pos, bool allowSegWit, bool allowMW,
-                                                  bool noJunkAtEnd)
-    {
-        int version = bitcoin::PROTOCOL_VERSION;
-        if (allowSegWit) version |= bitcoin::SERIALIZE_TRANSACTION_USE_WITNESS;
-        if (allowMW) version |= bitcoin::SERIALIZE_TRANSACTION_USE_MWEB;
-        bitcoin::GenericVectorReader<QByteArray> vr(bitcoin::SER_NETWORK, version, bytes, pos);
-        auto ret = bitcoin::CTransaction(bitcoin::deserialize, vr);
-        if (noJunkAtEnd && !vr.empty())
-            throw std::ios_base::failure("Got unprocessed bytes at the end when deserializeing a bitcoin object");
-        return ret;
-    }
-
     QByteArray Hash(const QByteArray &b, bool once)
     {
         bitcoin::CHash256 h(once);
-        QByteArray ret(int(h.OUTPUT_SIZE), Qt::Initialization::Uninitialized);
-        h.Write(reinterpret_cast<const uint8_t *>(b.constData()), size_t(b.length()));
+        QByteArray ret(QByteArray::size_type(h.OUTPUT_SIZE), Qt::Initialization::Uninitialized);
+        h.Write(reinterpret_cast<const uint8_t *>(b.constData()), static_cast<size_t>(b.length()));
         h.Finalize(reinterpret_cast<uint8_t *>(ret.data()));
         return ret;
     }
@@ -101,10 +87,20 @@ namespace BTC
         return ret;
     }
 
+    QByteArray HashTwo(const QByteArray &a, const QByteArray &b)
+    {
+        bitcoin::CHash256 h(/* once = */false);
+        QByteArray ret(QByteArray::size_type(h.OUTPUT_SIZE), Qt::Initialization::Uninitialized);
+        h.Write(reinterpret_cast<const uint8_t *>(a.constData()), static_cast<size_t>(a.length()));
+        h.Write(reinterpret_cast<const uint8_t *>(b.constData()), static_cast<size_t>(b.length()));
+        h.Finalize(reinterpret_cast<uint8_t *>(ret.data()));
+        return ret;
+    }
+
     QByteArray Hash160(const QByteArray &b) {
         bitcoin::CHash160 h;
-        QByteArray ret(int(h.OUTPUT_SIZE), Qt::Initialization::Uninitialized);
-        h.Write(reinterpret_cast<const uint8_t *>(b.constData()), size_t(b.length()));
+        QByteArray ret(QByteArray::size_type(h.OUTPUT_SIZE), Qt::Initialization::Uninitialized);
+        h.Write(reinterpret_cast<const uint8_t *>(b.constData()), static_cast<size_t>(b.length()));
         h.Finalize(reinterpret_cast<uint8_t *>(ret.data()));
         return ret;
     }
@@ -171,6 +167,7 @@ namespace BTC
             { TestNet4, "test4"},
             { ScaleNet, "scale"},
             { RegTestNet, "regtest"},
+            { ChipNet, "chip"},
         }};
         const QMap<QString, Net> nameNetMap = {{
             {"main",     MainNet},     // BCHN, BU, ABC, Core, LitecoinCore
@@ -182,6 +179,7 @@ namespace BTC
             {"testnet4", TestNet4},    // possible future bchd
             {"regtest",  RegTestNet},  // BCHN, BU, ABC, bchd, Core, LitecoinCore
             {"signet",   TestNet},     // Core only
+            {"chip",     ChipNet},     // BCH only
         }};
         const QString invalidNetName = "invalid";
     };
@@ -211,5 +209,30 @@ namespace BTC
         if (s == coinNameLTC) return Coin::LTC;
         return Coin::Unknown;
     }
+
+    bitcoin::token::OutputDataPtr DeserializeTokenDataWithPrefix(const QByteArray &ba, int pos) {
+        bitcoin::token::OutputDataPtr ret;
+        if (ba.size() - pos > 0) {
+            // attempt to deserialize token data
+            if (uint8_t(ba[pos++]) != bitcoin::token::PREFIX_BYTE) // Expect: 0xef
+                throw std::ios_base::failure(
+                    strprintf("Expected token prefix byte 0x%02x, instead got 0x%02x in %s at position %i",
+                              bitcoin::token::PREFIX_BYTE, uint8_t(ba[pos-1]), __func__, pos-1));
+            ret.emplace();
+            BTC::Deserialize<bitcoin::token::OutputData>(*ret, ba, pos , false, false,
+                                                         true /* cashTokens */,
+                                                         true /* noJunkAtEnd */);
+        }
+        return ret;
+    }
+
+    void SerializeTokenDataWithPrefix(QByteArray &ba, const bitcoin::token::OutputData *ptokenData) {
+        if (ptokenData) {
+            ba.reserve(ba.size() + 1 + ptokenData->EstimatedSerialSize());
+            ba.append(char(bitcoin::token::PREFIX_BYTE)); // append PREFIX_BYTE since we expect it on deser
+            BTC::Serialize(ba, *ptokenData); // append serialized token data
+        }
+    }
+
 
 } // end namespace BTC

@@ -64,7 +64,7 @@ You may also build from the CLI (on Linux and MacOS):
 **A note for Windows users**: `Qt 5.13.2` (or above) with `MinGW G++ 7.x.x` is the compiler/Qt kit you should be using.  MSVC is not supported by this codebase at the present time.
 
 #### What to do if compiling fails
-If you have problems compiling, the most likely culprit would be your compiler not being `C++17` compliant (please use a recent verson of `GCC` or `clang` on Linux, Apple's `Xcode` on Mac, or `MinGW G++ 7.x` on Windows).
+If you have problems compiling, the most likely culprit would be your compiler not being `C++17` compliant (please use a recent version of `GCC` or `clang` on Linux, Apple's `Xcode` on Mac, or `MinGW G++ 7.x` on Windows).
 
 The other likely culprit is the fact that at the present time I have included a statically-built `librocksdb` in the codebase. There are versions of this library for Windows, Mac, and Linux included right in the source tree, and `Fulcrum.pro` looks for them and links to them. Instructions are included within the `Fulcrum.pro` project file about how to build your own static `librocksdb` if the bundled one does not work on your system.
 
@@ -156,20 +156,31 @@ Execute the binary, with `-h` to see the built-in help, e.g. `./Fulcrum -h`. You
 
 It is recommended you specify a data dir (`-D` via CLI or `datadir=` via config file) on an SSD drive for best results.  Synching against `testnet` should take you about 10-20 minutes (more on slower machines), and mainnet can take anywhere from 4 hours to 20+ hours, depending on machine and drive speed.  I have not tried synching against mainnet on an HDD and it will probably take ***days*** if you are lucky.
 
-Once the server finishes synching it will behave like an ElectronX/ElectrumX server and it can receive requests from Electron Cash (or Electrum if on BTC).
+As long as the server is still synchronizing, all public-facing ports will not yet be bound for listening and as such an attempt to connect to one of the RPC ports will fail with a socket error such as e.g. "Connection refused". Once the server finishes synching it will behave like an ElectronX/ElectrumX server and it can receive requests from Electron Cash (or Electrum if on BTC).
 
 You may also wish to read the [Fulcrum manpage](https://github.com/cculianu/Fulcrum/blob/master/doc/unix-man-page.md).
 
 
 #### Admin Script: FulcrumAdmin
 
-`Fulcrum` comes with an admin script (`Python 3.6+` is required on the system to run this script).  You may send commands to `Fulcrum` using this script. The script requires that an **admin port** (config var `admin=`, CLI arg `-a`) be configured for your server.  To run the script, execute `./FulcrumAdmin -h` and you will see a list of possible subcommands that you can send to `Fulcrum`.  Here are two of the most popular commands to try (the below assumes the `admin` port is on port `8000`):
+`Fulcrum` comes with an admin script (`Python 3.6+` is required on the system to run this script).  You may send commands to `Fulcrum` using this script. The script requires that an **admin port** (config var `admin=`, CLI arg `-a`) be configured for your server.  To run the script, execute `./FulcrumAdmin -h` and you will see a list of possible subcommands that you can send to `Fulcrum`. Below you see all available commands (the below assumes the `admin` port is on port `8000`):
 
-    $ ./FulcrumAdmin -p 8000 peers
-    $ ./FulcrumAdmin -p 8000 clients
-    $ ./FulcrumAdmin -p 8000 getinfo
-
-***(This section is incomplete for now, all apologies -- more documentation is coming soon!)***
+    $ ./FulcrumAdmin -p 8000 addpeer              Add a peer to the server's list of peers
+    $ ./FulcrumAdmin -p 8000 ban                  Ban clients by ID and/or IP address
+    $ ./FulcrumAdmin -p 8000 banpeer              Ban peers by hostname suffix
+    $ ./FulcrumAdmin -p 8000 bitcoind_throttle    Query or set server bitcoind_throttle setting
+    $ ./FulcrumAdmin -p 8000 clients (sessions)   Print information on all the currently connected clients
+    $ ./FulcrumAdmin -p 8000 getinfo              Get server information
+    $ ./FulcrumAdmin -p 8000 kick                 Kick clients by ID and/or IP address
+    $ ./FulcrumAdmin -p 8000 listbanned (banlist) Print the list of banned IP addresses and peer hostnames
+    $ ./FulcrumAdmin -p 8000 loglevel             Set the server's logging verbosity
+    $ ./FulcrumAdmin -p 8000 maxbuffer            Query or set server max_buffer setting
+    $ ./FulcrumAdmin -p 8000 peers                Print peering information
+    $ ./FulcrumAdmin -p 8000 rmpeer               Remove peers by hostname suffix
+    $ ./FulcrumAdmin -p 8000 simdjson             Get or set the server's 'simdjson' (JSON parser) setting
+    $ ./FulcrumAdmin -p 8000 stop (shutdown)      Gracefully shut down the server
+    $ ./FulcrumAdmin -p 8000 unban                Unban IP addresses
+    $ ./FulcrumAdmin -p 8000 unbanpeer            Unban peers by hostname suffix
 
 ---
 
@@ -181,20 +192,13 @@ Documentation for the Electrum Cash protocol that Fulcrum uses is [available her
 
 ### Platform Notes
 
-#### Big Endian Architectures
-
-The code is more or less configured to assume a "little endian" architecture by default (which is what all Intel x86/x86_64 are).  If you're on a big endian machine, on Linux it should just auto-detect that fact.  However, on other OS's such as BSD, if you're on a big endian machine, you may need to uncomment this line from the `.pro` file:
-
-    # DEFINES += WORDS_BIGENDIAN
-
-
 #### Windows
 
 This codebase will not compile correctly (or at all) using MSVC. Please use the `MinGW` and/or `G++` kit in Qt Creator to build this software.
 
 #### Linux
 
-If you have `clang` on your system, configure the project to use it as the compiler preferentially over `G++`.  `G++` works too, but `clang` is preferred.
+If you have `clang` on your system, configure the project to use it as the compiler preferentially over `g++`.  `g++` works great too, but `clang` is preferred.
 
 #### MacOS
 
